@@ -117,13 +117,6 @@
   </header>
 
   <section>
-    <div class="now" id="nowCard">
-      <div class="card" id="nowLogo"><b>—</b></div>
-      <div class="meta"><div class="k"><span class="live"></span>Şu an TV'de</div><div class="n" id="nowName">Bekleniyor</div><div class="p" id="nowProg"></div></div>
-    </div>
-  </section>
-
-  <section>
     <h2>Söyle ya da yaz</h2>
     <div class="ask">
       <button class="mic press" id="mic" aria-label="Sesli komut">
@@ -132,12 +125,6 @@
       <form class="field" id="askForm"><input id="ask" type="text" enterkeyhint="go" autocomplete="off" placeholder="Ne izlemek istersin?"><button type="submit">Git</button></form>
     </div>
     <div class="heard" id="heard"></div>
-    <div class="chips">
-      <button class="chip press" data-say="TRT 1 aç">TRT 1 aç</button>
-      <button class="chip press" data-say="spor kanalı aç">Spor kanalı</button>
-      <button class="chip press" data-say="YouTube'da Tarkan ara">YouTube'da Tarkan ara</button>
-      <button class="chip press" data-say="sesi kıs">Sesi kıs</button>
-    </div>
   </section>
 
   <section>
@@ -189,8 +176,7 @@ var lastState = 0, waitingSince = 0;
 function $(id){ return document.getElementById(id); }
 function toast(t){ var e = $("toast"); e.textContent = t; e.className = "show"; clearTimeout(toast.h); toast.h = setTimeout(function(){ e.className = ""; }, 2200); }
 function send(obj, label){
-  if (navigator.vibrate) try { navigator.vibrate(12); } catch(e){}
-  if (label) toast(label);
+  if (label){ toast(label); if (navigator.vibrate) try { navigator.vibrate(12); } catch(e){} }   // yalnızca dokunuşlarda titret
   if (!waitingSince) waitingSince = Date.now();
   return fetch(TO_TV, {method: "POST", body: JSON.stringify(obj)}).catch(function(){ toast("İnternet bağlantısı yok"); });
 }
@@ -283,11 +269,6 @@ $("filter").addEventListener("input", drawGrid);
 /* ---------- TV'den gelen durum ---------- */
 function onState(s){
   lastState = Date.now(); waitingSince = 0; setStatus();
-  if (s.cur){
-    $("nowName").textContent = (s.cur.d ? s.cur.d + " · " : "") + s.cur.n;
-    $("nowProg").textContent = s.cur.p || "";
-    logoCard($("nowLogo"), s.cur.k, s.cur.n);
-  }
   if (s.top && s.top.length){
     var box = $("top"); box.innerHTML = "";
     s.top.forEach(function(x){ var c = FIRST[x.k] || {k: x.k, name: x.n, d: x.d}; box.appendChild(channelTile(c, x.p)); });
