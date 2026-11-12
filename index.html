@@ -97,6 +97,18 @@
   .grid .tile .card{height:58px}
   .empty{color:var(--muted);font-size:14px;padding:12px 0}
 
+  /* YouTube sonuçları */
+  [hidden]{display:none!important}
+  .yt{margin-top:14px}
+  .ytlist{display:flex;flex-direction:column;gap:10px}
+  .yi{display:flex;gap:12px;align-items:center;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:8px}
+  .yi .th{position:relative;width:128px;height:72px;flex:none;border-radius:10px;overflow:hidden;background:#111}
+  .yi .th img{width:128px;height:72px;object-fit:cover}
+  .yi .th span{position:absolute;right:4px;bottom:4px;background:rgba(0,0,0,.8);font-size:11px;padding:1px 5px;border-radius:4px}
+  .yi .tx{min-width:0}
+  .yi .t{font-size:14px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .yi .c{font-size:12px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
   .note{font-size:12px;color:var(--muted);line-height:1.5}
   .family{text-align:center;margin-top:8px}
   .family b{display:block;font-size:13px;letter-spacing:.35em;color:rgba(244,246,251,.8)}
@@ -125,6 +137,10 @@
       <form class="field" id="askForm"><input id="ask" type="text" enterkeyhint="go" autocomplete="off" placeholder="Ne izlemek istersin?"><button type="submit">Git</button></form>
     </div>
     <div class="heard" id="heard"></div>
+    <div class="yt" id="ytBox" hidden>
+      <h2 id="ytHead">YouTube sonuçları</h2>
+      <div class="ytlist" id="ytList"></div>
+    </div>
   </section>
 
   <section>
@@ -189,7 +205,7 @@ function setStatus(){
 function listen(){
   var es = new EventSource(FROM_TV + "/sse");
   es.onmessage = function(e){
-    try { var m = JSON.parse(e.data); var s = JSON.parse(m.message); if (s.t === "state") onState(s); } catch(err){}
+    try { var m = JSON.parse(e.data); var s = JSON.parse(m.message); if (s.t === "state") onState(s); else if (s.t === "yt") onYt(s); } catch(err){}
   };
   es.onerror = function(){ setStatus(); };
 }
@@ -273,6 +289,27 @@ function onState(s){
     var box = $("top"); box.innerHTML = "";
     s.top.forEach(function(x){ var c = FIRST[x.k] || {k: x.k, name: x.n, d: x.d}; box.appendChild(channelTile(c, x.p)); });
   }
+}
+
+/* ---------- YouTube sonuçları (TV arar, listeyi buraya da gönderir) ---------- */
+function onYt(s){
+  lastState = Date.now(); setStatus();
+  var box = $("ytList"); box.innerHTML = "";
+  $("ytHead").textContent = "YouTube: " + s.q;
+  (s.items || []).forEach(function(it){
+    var b = document.createElement("button"); b.className = "yi press";
+    var th = document.createElement("div"); th.className = "th";
+    var im = new Image(); im.alt = ""; im.src = "https://i.ytimg.com/vi/" + it.v + "/mqdefault.jpg"; th.appendChild(im);
+    if (it.d){ var d = document.createElement("span"); d.textContent = it.d; th.appendChild(d); }
+    var tx = document.createElement("div"); tx.className = "tx";
+    var t = document.createElement("div"); t.className = "t"; t.textContent = it.t; tx.appendChild(t);
+    var c = document.createElement("div"); c.className = "c"; c.textContent = it.c; tx.appendChild(c);
+    b.appendChild(th); b.appendChild(tx);
+    b.onclick = function(){ send({cmd: "play", v: it.v}, "TV'de açılıyor"); };
+    box.appendChild(b);
+  });
+  $("ytBox").hidden = !(s.items && s.items.length);
+  $("ytBox").scrollIntoView({behavior: "smooth", block: "start"});
 }
 
 /* ---------- Türkçe komutları anlama ---------- */
