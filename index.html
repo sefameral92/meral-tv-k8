@@ -137,6 +137,7 @@
       <form class="field" id="askForm"><input id="ask" type="text" enterkeyhint="go" autocomplete="off" placeholder="Ne izlemek istersin?"><button type="submit">Git</button></form>
     </div>
     <div class="heard" id="heard"></div>
+    <div class="note" id="micHelp" hidden>Mikrofonun her seferinde izin istememesi için: Safari'de adres çubuğundaki <b>aA</b> → <b>Web Sitesi Ayarları</b> → <b>Mikrofon: İzin Ver</b>. Ayrıca <b>Ayarlar → Safari → Mikrofon</b> bölümünü <b>İzin Ver</b> yap.</div>
     <div class="yt" id="ytBox" hidden>
       <h2 id="ytHead">YouTube sonuçları</h2>
       <div class="ytlist" id="ytList"></div>
@@ -376,20 +377,35 @@ $("askForm").addEventListener("submit", function(e){ e.preventDefault(); var v =
 Array.prototype.forEach.call(document.querySelectorAll("[data-say]"), function(b){ b.onclick = function(){ runCommand(b.getAttribute("data-say")); }; });
 
 /* ---------- Sesli komut (Türkçe) ---------- */
-var SR = window.SpeechRecognition || window.webkitSpeechRecognition, rec = null, listening = false;
-$("mic").onclick = function(){
-  if (!SR){ $("ask").focus(); return toast("Klavyedeki mikrofona basıp konuş"); }
-  if (listening){ try { rec.stop(); } catch(e){} return; }
+/* Safari mikrofon iznini her YENİ tanıyıcı için yeniden sorabiliyor. Bu yüzden tek bir tanıyıcı
+   oluşturup her basışta onu yeniden başlatıyoruz: izin, sayfa açık kaldığı sürece bir kez sorulur.
+   Kalıcı izin için Safari ayarı da gerekir (sayfadaki ipucuna bak). */
+var SR = window.SpeechRecognition || window.webkitSpeechRecognition, rec = null, listening = false, finalText = "";
+function getRec(){
+  if (rec) return rec;
   rec = new SR(); rec.lang = "tr-TR"; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
-  var final = "";
   rec.onstart = function(){ listening = true; $("mic").classList.add("on"); $("heard").textContent = "Dinliyorum…"; };
   rec.onresult = function(e){
-    var txt = ""; for (var i=0;i<e.results.length;i++){ txt += e.results[i][0].transcript; if (e.results[i].isFinal) final = txt; }
+    var txt = ""; for (var i=0;i<e.results.length;i++){ txt += e.results[i][0].transcript; if (e.results[i].isFinal) finalText = txt; }
     $("heard").textContent = "“" + txt + "”";
   };
-  rec.onerror = function(e){ if (e.error === "not-allowed") toast("Mikrofon izni verilmedi. Ayarlar > Safari > Mikrofon"); else if (e.error !== "no-speech" && e.error !== "aborted") toast("Ses tanınamadı, tekrar dene"); };
-  rec.onend = function(){ listening = false; $("mic").classList.remove("on"); var t = final || ($("heard").textContent || "").replace(/[“”]/g, ""); if (t && t !== "Dinliyorum…") runCommand(t); };
-  try { rec.start(); } catch(e){ toast("Mikrofon açılamadı"); }
+  rec.onerror = function(e){
+    if (e.error === "not-allowed" || e.error === "service-not-allowed"){ $("micHelp").hidden = false; toast("Mikrofon izni verilmedi"); }
+    else if (e.error !== "no-speech" && e.error !== "aborted") toast("Ses tanınamadı, tekrar dene");
+  };
+  rec.onend = function(){
+    listening = false; $("mic").classList.remove("on");
+    var t = finalText || ($("heard").textContent || "").replace(/[“”]/g, "");
+    if (t && t !== "Dinliyorum…") runCommand(t);
+  };
+  return rec;
+}
+$("mic").onclick = function(){
+  if (!SR){ $("ask").focus(); return toast("Klavyedeki mikrofona basıp konuş"); }
+  var r = getRec();
+  if (listening){ try { r.stop(); } catch(e){} return; }
+  finalText = "";
+  try { r.start(); } catch(e){ try { r.abort(); } catch(e2){} setTimeout(function(){ try { r.start(); } catch(e3){ toast("Mikrofon açılamadı"); } }, 250); }
 };
 
 /* ---------- Tuşlar ---------- */
