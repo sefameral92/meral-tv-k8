@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Meral TV">
+<meta name="theme-color" content="#07090f">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>Meral TV Kumanda</title>
+<script src="kanallar.js"></script>
+<style>
+  /* Meral TV'nin TV'deki görünümüyle aynı dünya: koyu zemin, cam kartlar, beyaz logo kartları, kırmızı vurgu */
+  :root{
+    --bg:#07090f; --surface:rgba(255,255,255,.07); --surface-2:rgba(255,255,255,.12); --line:rgba(255,255,255,.10);
+    --fg:#f4f6fb; --muted:rgba(244,246,251,.58); --red:#e5182a; --blue:#2b5fd9; --ok:#3ecf8e;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:16px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;-webkit-user-select:none;user-select:none}
+  body::before{content:"";position:fixed;inset:-30% -30% auto -30%;height:120%;z-index:-1;
+    background:radial-gradient(ellipse 60% 40% at 15% 10%, rgba(91,80,255,.35), transparent 70%),
+               radial-gradient(ellipse 50% 35% at 90% 20%, rgba(0,190,210,.22), transparent 70%),
+               radial-gradient(ellipse 70% 40% at 50% 90%, rgba(220,60,160,.20), transparent 70%)}
+  main{max-width:560px;margin:0 auto;
+    padding:calc(12px + env(safe-area-inset-top,0px)) max(16px, env(safe-area-inset-right,0px)) calc(32px + env(safe-area-inset-bottom,0px)) max(16px, env(safe-area-inset-left,0px));
+    display:flex;flex-direction:column;gap:22px}
+
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brand{font:900 26px/1 "Impact","Avenir Next Condensed","Arial Narrow",sans-serif;letter-spacing:1px;color:var(--red);transform:scaleY(1.15)}
+  .status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);background:var(--surface);
+    border:1px solid var(--line);padding:6px 12px;border-radius:999px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#f5b041}
+  .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)} .dot.bad{background:var(--red)}
+
+  h2{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+  .press{transition:transform .12s, background .12s}
+  .press:active{transform:scale(.95)}
+
+  /* Şimdi izlenen */
+  .now{display:flex;gap:14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:14px}
+  .now .card{width:96px;height:56px;flex:none}
+  .now .meta{min-width:0}
+  .now .k{font-size:12px;color:var(--muted)}
+  .now .n{font-size:20px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .now .p{font-size:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--red);margin-right:6px;box-shadow:0 0 8px var(--red);vertical-align:1px}
+
+  /* Sesli / yazılı komut */
+  .ask{display:flex;gap:10px;align-items:center}
+  .mic{width:64px;height:64px;border-radius:50%;flex:none;display:grid;place-items:center;
+    background:linear-gradient(135deg,#e5182a,#ff4fa3);box-shadow:0 10px 30px rgba(229,24,42,.35)}
+  .mic svg{width:28px;height:28px}
+  .mic.on{animation:pulse 1.1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,79,163,.55)}50%{box-shadow:0 0 0 16px rgba(255,79,163,0)}}
+  .field{flex:1;min-width:0;display:flex;background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .field input{flex:1;min-width:0;background:none;border:0;color:var(--fg);font:inherit;font-size:17px;padding:14px;outline:none;-webkit-user-select:text;user-select:text}
+  .field button{padding:0 16px;color:var(--fg);font-weight:600}
+  .heard{min-height:20px;font-size:14px;color:var(--muted);margin-top:8px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .chip{font-size:13px;padding:7px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--muted)}
+
+  /* Kumanda tuşları */
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .key{height:58px;border-radius:16px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px}
+  .key svg{width:22px;height:22px}
+  .key.wide{grid-column:span 3;background:var(--surface-2)}
+
+  /* Uygulamalar */
+  .apps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .app{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px 4px;border-radius:18px;background:var(--surface);border:1px solid var(--line);font-size:12px;text-align:center}
+  .app .ico{width:48px;height:48px;border-radius:13px;display:grid;place-items:center}
+  .app .ico svg{width:26px;height:26px}
+
+  /* Kanal kartları */
+  .row{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px;margin:0 -16px;padding-left:16px;padding-right:16px}
+  .row::-webkit-scrollbar{display:none}
+  .tile{scroll-snap-align:start;flex:none;width:150px;border-radius:18px;background:var(--surface);border:1px solid var(--line);padding:10px;text-align:left;position:relative}
+  .card{border-radius:12px;background:rgba(255,255,255,.95);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .card img{max-width:82%;max-height:74%}
+  .card b{color:#1a1d2b;font-size:13px;font-weight:800;text-align:center;padding:0 6px}
+  .tile .card{height:72px}
+  .tile .nm{margin-top:8px;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile .pg{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:16px}
+  .num{position:absolute;top:14px;right:16px;font-size:11px;font-weight:800;color:rgba(20,22,35,.5)}
+
+  .tabs{display:flex;gap:8px;overflow-x:auto;margin-bottom:10px}
+  .tab{flex:none;font-size:14px;padding:8px 14px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--muted)}
+  .tab.on{background:var(--fg);color:#111;border-color:var(--fg)}
+  .search{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:14px;color:var(--fg);font:inherit;font-size:16px;padding:12px 14px;margin-bottom:10px;outline:none;-webkit-user-select:text;user-select:text}
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .grid .tile{width:auto}
+  .grid .tile .card{height:58px}
+  .empty{color:var(--muted);font-size:14px;padding:12px 0}
+
+  .note{font-size:12px;color:var(--muted);line-height:1.5}
+  .family{text-align:center;margin-top:8px}
+  .family b{display:block;font-size:13px;letter-spacing:.35em;color:rgba(244,246,251,.8)}
+  .family span{display:block;font-size:11px;letter-spacing:.25em;color:var(--muted);margin-top:4px}
+
+  #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);
+    background:rgba(20,22,35,.95);border:1px solid var(--line);padding:12px 18px;border-radius:14px;font-size:14px;opacity:0;
+    transition:opacity .2s, transform .2s;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (prefers-reduced-motion: reduce){ .press,.mic.on,#toast{transition:none;animation:none} }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand">MERAL TV</div>
+    <div class="status" id="status"><span class="dot" id="dot"></span><span id="statusText">TV'ye bağlanıyor…</span></div>
+  </header>
+
+  <section>
+    <div class="now" id="nowCard">
+      <div class="card" id="nowLogo"><b>—</b></div>
+      <div class="meta"><div class="k"><span class="live"></span>Şu an TV'de</div><div class="n" id="nowName">Bekleniyor</div><div class="p" id="nowProg"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Söyle ya da yaz</h2>
+    <div class="ask">
+      <button class="mic press" id="mic" aria-label="Sesli komut">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3" fill="#fff"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      </button>
+      <form class="field" id="askForm"><input id="ask" type="text" enterkeyhint="go" autocomplete="off" placeholder="Ne izlemek istersin?"><button type="submit">Git</button></form>
+    </div>
+    <div class="heard" id="heard"></div>
+    <div class="chips">
+      <button class="chip press" data-say="TRT 1 aç">TRT 1 aç</button>
+      <button class="chip press" data-say="spor kanalı aç">Spor kanalı</button>
+      <button class="chip press" data-say="YouTube'da Tarkan ara">YouTube'da Tarkan ara</button>
+      <button class="chip press" data-say="sesi kıs">Sesi kıs</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Kumanda</h2>
+    <div class="pad">
+      <button class="key press" data-cmd="vol:down"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 9h4l5-4v14l-5-4H4z" fill="#fff"/><path d="M17 12h4" stroke-linecap="round"/></svg>Ses</button>
+      <button class="key press" data-cmd="vol:mute"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="#fff"/><path d="M17 9l4 6M21 9l-4 6"/></svg>Sessiz</button>
+      <button class="key press" data-cmd="vol:up"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="#fff"/><path d="M17 12h4M19 10v4"/></svg>Ses</button>
+      <button class="key press" data-cmd="ch:down">Kanal −</button>
+      <button class="key press" data-cmd="live">Kanallar</button>
+      <button class="key press" data-cmd="ch:up">Kanal +</button>
+      <button class="key wide press" data-cmd="home">Meral TV'ye dön</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Uygulamalar</h2>
+    <div class="apps">
+      <button class="app press" data-cmd="live"><span class="ico" style="background:linear-gradient(135deg,#2b5fd9,#00b7e8)"><svg viewBox="0 0 64 64"><rect x="6" y="12" width="52" height="34" rx="6" fill="none" stroke="#fff" stroke-width="5"/><path d="M24 54h16" stroke="#fff" stroke-width="5" stroke-linecap="round"/><circle cx="32" cy="29" r="5" fill="#ff5a5a"/></svg></span>Canlı TV</button>
+      <button class="app press" data-app="YouTube"><span class="ico" style="background:#e5182a"><svg viewBox="0 0 64 64"><path d="M22 14 L52 32 L22 50 Z" fill="#fff"/></svg></span>YouTube</button>
+      <button class="app press" data-app="IPTV Smarters"><span class="ico" style="background:#5b2bd6"><svg viewBox="0 0 64 64"><rect x="8" y="16" width="48" height="32" rx="6" fill="none" stroke="#fff" stroke-width="5"/><path d="M22 6 L32 16 L42 6" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/></svg></span>IPTV</button>
+      <button class="app press" data-app="İnternet"><span class="ico" style="background:#3d6cf0"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="22" fill="none" stroke="#fff" stroke-width="5"/><path d="M10 32h44M32 10c-10 12-10 32 0 44M32 10c10 12 10 32 0 44" fill="none" stroke="#fff" stroke-width="4"/></svg></span>İnternet</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>En çok izlenenler</h2>
+    <div class="row" id="top"><div class="empty">TV'den bekleniyor…</div></div>
+  </section>
+
+  <section>
+    <h2>Kanallar</h2>
+    <input class="search" id="filter" type="search" placeholder="Kanal ara (ör. haber, star, 22)" autocomplete="off">
+    <div class="tabs" id="tabs"></div>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <p class="note">Telefon komutları güvenli bir mesaj servisi (ntfy.sh) üzerinden Meral TV'ye gider; TV'de Meral TV'nin arka planda çalışıyor olması gerekir. YouTube gibi uygulamaların içinde ok tuşlarıyla gezinmek için TV kumandasını kullan.</p>
+  <div class="family"><b>MERAL AİLESİ</b><span>SULTAN · SEFA · ASYA · MUSTAFA</span></div>
+</main>
+<div id="toast"></div>
+
+<script>
+/* ---------- Bağlantı (ntfy.sh): telefon → TV ve TV → telefon ---------- */
+var TO_TV  = "https://ntfy.sh/meraltv-donezqcxuy1bdxzeeqnq";
+var FROM_TV = "https://ntfy.sh/meraltv-ovss10fbq7nqtxa64fj5";
+var lastState = 0, waitingSince = 0;
+
+function $(id){ return document.getElementById(id); }
+function toast(t){ var e = $("toast"); e.textContent = t; e.className = "show"; clearTimeout(toast.h); toast.h = setTimeout(function(){ e.className = ""; }, 2200); }
+function send(obj, label){
+  if (navigator.vibrate) try { navigator.vibrate(12); } catch(e){}
+  if (label) toast(label);
+  if (!waitingSince) waitingSince = Date.now();
+  return fetch(TO_TV, {method: "POST", body: JSON.stringify(obj)}).catch(function(){ toast("İnternet bağlantısı yok"); });
+}
+function setStatus(){
+  var ok = Date.now() - lastState < 45000;
+  var late = waitingSince && Date.now() - waitingSince > 8000 && !ok;
+  $("dot").className = "dot" + (ok ? " ok" : late ? " bad" : "");
+  $("statusText").textContent = ok ? "TV bağlı" : late ? "TV yanıt vermiyor" : "TV'ye bağlanıyor…";
+}
+function listen(){
+  var es = new EventSource(FROM_TV + "/sse");
+  es.onmessage = function(e){
+    try { var m = JSON.parse(e.data); var s = JSON.parse(m.message); if (s.t === "state") onState(s); } catch(err){}
+  };
+  es.onerror = function(){ setStatus(); };
+}
+function sync(){ send({cmd: "sync"}); }
+
+/* ---------- Kanallar: TV'deki Meral TV ile aynı sıralama ve numaralar ---------- */
+var LOGO_ALIAS = {yildizen:"yildiztven", trt3spor:"trtsporyildiz", tgrthabersd:"tgrthaber", dmaxsd:"dmax", tlcsd:"tlc", semerkandway:"semerkand", szc:"sozcutv", tv2:"teve2"};
+function logoKey(name){
+  return String(name).replace(/^\s+|\s+$/g, "").replace(/\s+(HD|FHD|UHD)$/i, "").toLowerCase()
+    .replace(/i̇/g,"i").replace(/[ç]/g,"c").replace(/[ğ]/g,"g").replace(/[ıi]/g,"i").replace(/[ö]/g,"o").replace(/[ş]/g,"s").replace(/[ü]/g,"u")
+    .replace(/[^a-z0-9]/g,"");
+}
+function dedupKey(name){ var k = logoKey(name); if (k.length > 3) k = k.replace(/sd$/, ""); return LOGO_ALIAS[k] || k; }
+function prettyName(n){ return String(n).replace(/^\s+|\s+$/g, "").replace(/\s+(HD|FHD|UHD)$/i, ""); }
+var POPULAR = ["trt1","atv","kanald","show","startv","now","tv8","kanal7","tv2","beyaztv","360"];
+var NEWS = ["haberturk","cnnturk","ntv","ahaber","trthaber","halktv","szc","tv100","haberglobal","tele1","24","tgrthaber","ulketv","tvnet","krttv","flashhaber","bloomberght","gzt","ulusal1tv","akittv","liderhaber","anews","telenews","trtworld","thturkhaber","ekoturk"];
+function isSport(k){ return /spor|sport/.test(k) || k === "fbtv" || k === "gstv" || k === "bjktv" || k === "tjktv"; }
+var NEWS_SET = {}; NEWS.forEach(function(k){ NEWS_SET[dedupKey(k)] = 1; });
+function isNews(k){ return !!NEWS_SET[k] || /haber|news/.test(k); }
+var FIRST = {}, GROUPS = [], ALL = [];
+(function build(){
+  var uniq = [];
+  CH.slice().sort(function(a,b){ return a[0]-b[0]; }).forEach(function(r){
+    var k = dedupKey(r[1]); if (FIRST[k]) return;
+    var c = {major: r[0], name: r[1], k: k}; FIRST[k] = c; uniq.push(c);
+  });
+  var used = {}, pop = [], sport = [], news = [], rest = [];
+  function take(a, c){ if (c && !used[c.k]){ used[c.k] = 1; a.push(c); } }
+  POPULAR.forEach(function(k){ take(pop, FIRST[dedupKey(k)]); });
+  uniq.forEach(function(c){ if (isSport(c.k)) take(sport, c); });
+  NEWS.forEach(function(k){ take(news, FIRST[dedupKey(k)]); });
+  uniq.forEach(function(c){ if (isNews(c.k)) take(news, c); });
+  uniq.forEach(function(c){ take(rest, c); });
+  GROUPS = [{t:"Popüler", l:pop}, {t:"Spor", l:sport}, {t:"Haber", l:news}, {t:"Diğer", l:rest}];
+  var n = 0; GROUPS.forEach(function(g){ g.l.forEach(function(c){ c.d = ++n; ALL.push(c); }); });
+})();
+function logoFor(k){ return LOGOS[k] || null; }
+function logoCard(card, k, name){
+  var u = logoFor(k);
+  card.innerHTML = "";
+  if (u){ var im = new Image(); im.alt = ""; im.onerror = function(){ card.innerHTML = ""; var b = document.createElement("b"); b.textContent = name; card.appendChild(b); }; im.src = u; card.appendChild(im); }
+  else { var b = document.createElement("b"); b.textContent = name; card.appendChild(b); }
+}
+function channelTile(c, prog){
+  var t = document.createElement("button"); t.className = "tile press";
+  var card = document.createElement("div"); card.className = "card"; t.appendChild(card); logoCard(card, c.k, prettyName(c.name));
+  var num = document.createElement("span"); num.className = "num"; num.textContent = c.d; t.appendChild(num);
+  var nm = document.createElement("div"); nm.className = "nm"; nm.textContent = prettyName(c.name); t.appendChild(nm);
+  var pg = document.createElement("div"); pg.className = "pg"; pg.textContent = prog || ""; t.appendChild(pg);
+  t.onclick = function(){ tune(c); };
+  return t;
+}
+function tune(c){ send({cmd: "tune", k: c.k}, prettyName(c.name) + " açılıyor"); }
+
+/* Kanal ızgarası: sekmeler + arama */
+var activeTab = 0;
+function drawTabs(){
+  var box = $("tabs"); box.innerHTML = "";
+  GROUPS.forEach(function(g, i){
+    var b = document.createElement("button"); b.className = "tab press" + (i === activeTab ? " on" : "");
+    b.textContent = g.t + " " + g.l.length; b.onclick = function(){ activeTab = i; $("filter").value = ""; drawTabs(); drawGrid(); };
+    box.appendChild(b);
+  });
+}
+function drawGrid(){
+  var q = $("filter").value.trim(), box = $("grid"); box.innerHTML = "";
+  var list;
+  if (q){
+    var qk = logoKey(q), qn = parseInt(q, 10);
+    list = ALL.filter(function(c){ return (qn && c.d === qn) || c.k.indexOf(qk) >= 0; }).slice(0, 60);
+  } else list = GROUPS[activeTab].l;
+  if (!list.length){ box.innerHTML = '<div class="empty">Bu adla kanal yok.</div>'; return; }
+  list.forEach(function(c){ box.appendChild(channelTile(c)); });
+}
+$("filter").addEventListener("input", drawGrid);
+
+/* ---------- TV'den gelen durum ---------- */
+function onState(s){
+  lastState = Date.now(); waitingSince = 0; setStatus();
+  if (s.cur){
+    $("nowName").textContent = (s.cur.d ? s.cur.d + " · " : "") + s.cur.n;
+    $("nowProg").textContent = s.cur.p || "";
+    logoCard($("nowLogo"), s.cur.k, s.cur.n);
+  }
+  if (s.top && s.top.length){
+    var box = $("top"); box.innerHTML = "";
+    s.top.forEach(function(x){ var c = FIRST[x.k] || {k: x.k, name: x.n, d: x.d}; box.appendChild(channelTile(c, x.p)); });
+  }
+}
+
+/* ---------- Türkçe komutları anlama ---------- */
+var NUMS = {"sıfır":0,"bir":1,"iki":2,"üç":3,"dört":4,"beş":5,"altı":6,"yedi":7,"sekiz":8,"dokuz":9,"on":10,"yirmi":20,"otuz":30,"kırk":40,"elli":50,"yüz":100};
+function wordsToDigits(t){
+  // "trt bir" → "trt 1", "yirmi dört" → "24"
+  return t.replace(/\b(yirmi|otuz|kırk|elli)\s+(bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz)\b/g, function(_, a, b){ return String(NUMS[a] + NUMS[b]); })
+          .replace(/\b(sıfır|bir|iki|üç|dört|beş|altı|yedi|sekiz|dokuz|on|yirmi|otuz|kırk|elli|yüz)\b/g, function(w){ return String(NUMS[w]); });
+}
+var SPOKEN = {"kanal d":"kanald","kanalde":"kanald","star":"startv","show tv":"show","şov":"show","teve 2":"tv2","teve iki":"tv2","tv 2":"tv2",
+  "sözcü":"szc","sözcü tv":"szc","habertürk":"haberturk","cnn":"cnnturk","a haber":"ahaber","trt haber":"trthaber","tv 8":"tv8","tv sekiz":"tv8",
+  "fox":"now","now tv":"now","a spor":"aspor","trt spor":"trtspor","beyaz":"beyaztv","halk":"halktv","tele bir":"tele1","tv yüz":"tv100","yüz tv":"tv100"};
+function findChannelBySpeech(text){
+  var t = " " + text + " ";
+  for (var s in SPOKEN){ if (t.indexOf(" " + s + " ") >= 0) return FIRST[dedupKey(SPOKEN[s])] || null; }
+  var k = logoKey(text), best = null;
+  ALL.forEach(function(c){ if (!best && (c.k === k)) best = c; });
+  if (best) return best;
+  ALL.forEach(function(c){ if (!best && c.k.length >= 3 && k.indexOf(c.k) >= 0) best = c; });
+  if (best) return best;
+  ALL.forEach(function(c){ if (!best && k.length >= 3 && c.k.indexOf(k) === 0) best = c; });
+  return best;
+}
+function runCommand(raw){
+  var text = String(raw || "").toLocaleLowerCase("tr-TR").replace(/[.!?,]/g, " ").replace(/\s+/g, " ").trim();
+  if (!text) return;
+  $("heard").textContent = "“" + raw + "”";
+  var t = wordsToDigits(text);
+
+  var m;
+  if (/^(youtube|yutup)('?(u|yu))?\s*(aç|açar mısın|başlat)?$/.test(t)) return send({cmd: "app", name: "YouTube"}, "YouTube açılıyor");
+  if (/^spor\s*kanal/.test(t)) return tune(GROUPS[1].l[0]);
+  if (/^haber\s*kanal/.test(t)) return tune(GROUPS[2].l[0]);
+  if ((m = t.match(/^(.+?)\s*(?:'?(?:da|de|ta|te))?\s*ara(?:r mısın)?$/)) && /youtube|yutup|yu tub/.test(m[1])){
+    var q = m[1].replace(/youtube'?(da|de)?|yutup'?(ta|da)?/g, "").trim();
+    if (q) return send({cmd: "search", where: "yt", q: q}, "YouTube'da aranıyor: " + q);
+  }
+  if ((m = t.match(/^(?:youtube'?(?:da|de)?|yutup'?(?:ta|da)?)\s+(.+?)\s*(?:ara|aç|bul)?$/))) return send({cmd: "search", where: "yt", q: m[1]}, "YouTube'da aranıyor: " + m[1]);
+  if ((m = t.match(/^google'?(?:da|de)?\s+(.+?)\s*(?:ara)?$/)) || (m = t.match(/^(.+?)\s+ara$/))) return send({cmd: "search", where: "google", q: m[1]}, "Google'da aranıyor: " + m[1]);
+
+  if (/ses(i)?\s*(aç|yükselt|artır|arttır)|sesi biraz aç|sesi yükselt/.test(t)){ for (var i=0;i<3;i++) send({cmd:"vol", dir:"up"}); return toast("Ses açılıyor"); }
+  if (/ses(i)?\s*(kıs|azalt|düşür)/.test(t)){ for (var j=0;j<3;j++) send({cmd:"vol", dir:"down"}); return toast("Ses kısılıyor"); }
+  if (/sessiz|sesi kapat|sesi aç(ık)?$/.test(t)) return send({cmd:"vol", dir:"mute"}, "Sessiz");
+  if (/sonraki kanal|kanal (yukarı|ileri|artı)/.test(t)) return send({cmd:"ch", dir:"up"}, "Sonraki kanal");
+  if (/önceki kanal|kanal (aşağı|geri|eksi)/.test(t)) return send({cmd:"ch", dir:"down"}, "Önceki kanal");
+  if (/meral|ana ?sayfa|geri dön|menü/.test(t)) return send({cmd:"home"}, "Meral TV açılıyor");
+  if (/kanal listesi|kanalları göster|canlı tv|canlı yayın/.test(t)) return send({cmd:"live"}, "Kanallar açılıyor");
+  if (/youtube|yutup/.test(t)) return send({cmd:"app", name:"YouTube"}, "YouTube açılıyor");
+  if (/iptv|smarters/.test(t)) return send({cmd:"app", name:"IPTV Smarters"}, "IPTV açılıyor");
+  if (/internet|tarayıcı|google/.test(t)) return send({cmd:"app", name:"İnternet"}, "İnternet açılıyor");
+  if (/spor/.test(t) && !findChannelBySpeech(t.replace(/(kanal(ı|ını)?|aç|açar mısın|koy|geç)/g, "").trim())) return tune(GROUPS[1].l[0]);
+  if (/haber/.test(t) && !findChannelBySpeech(t.replace(/(kanal(ı|ını)?|aç|açar mısın|koy|geç)/g, "").trim())) return tune(GROUPS[2].l[0]);
+
+  if ((m = t.match(/^(?:kanal\s*)?(\d{1,3})(?:\s*(?:numara|numaralı kanal|kanal))?(?:\s*(?:aç|a geç|e geç|açar mısın))?$/))){
+    var n = parseInt(m[1], 10), c1 = ALL.filter(function(c){ return c.d === n; })[0];
+    if (c1) return tune(c1);
+  }
+  var name = t.replace(/\b(lütfen|bana|şimdi|kanal(ı|ını|ına|a)?|aç(ar mısın|abilir misin)?|izle(t)?|koy|geç|'?(e|a|ye|ya)\s*geç)\b/g, " ").replace(/\s+/g, " ").trim();
+  var c2 = findChannelBySpeech(name) || findChannelBySpeech(t);
+  if (c2) return tune(c2);
+  toast("Anlayamadım: " + raw);
+}
+$("askForm").addEventListener("submit", function(e){ e.preventDefault(); var v = $("ask").value; $("ask").value = ""; $("ask").blur(); runCommand(v); });
+Array.prototype.forEach.call(document.querySelectorAll("[data-say]"), function(b){ b.onclick = function(){ runCommand(b.getAttribute("data-say")); }; });
+
+/* ---------- Sesli komut (Türkçe) ---------- */
+var SR = window.SpeechRecognition || window.webkitSpeechRecognition, rec = null, listening = false;
+$("mic").onclick = function(){
+  if (!SR){ $("ask").focus(); return toast("Klavyedeki mikrofona basıp konuş"); }
+  if (listening){ try { rec.stop(); } catch(e){} return; }
+  rec = new SR(); rec.lang = "tr-TR"; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
+  var final = "";
+  rec.onstart = function(){ listening = true; $("mic").classList.add("on"); $("heard").textContent = "Dinliyorum…"; };
+  rec.onresult = function(e){
+    var txt = ""; for (var i=0;i<e.results.length;i++){ txt += e.results[i][0].transcript; if (e.results[i].isFinal) final = txt; }
+    $("heard").textContent = "“" + txt + "”";
+  };
+  rec.onerror = function(e){ if (e.error === "not-allowed") toast("Mikrofon izni verilmedi. Ayarlar > Safari > Mikrofon"); else if (e.error !== "no-speech" && e.error !== "aborted") toast("Ses tanınamadı, tekrar dene"); };
+  rec.onend = function(){ listening = false; $("mic").classList.remove("on"); var t = final || ($("heard").textContent || "").replace(/[“”]/g, ""); if (t && t !== "Dinliyorum…") runCommand(t); };
+  try { rec.start(); } catch(e){ toast("Mikrofon açılamadı"); }
+};
+
+/* ---------- Tuşlar ---------- */
+Array.prototype.forEach.call(document.querySelectorAll("[data-cmd]"), function(b){
+  b.onclick = function(){
+    var p = b.getAttribute("data-cmd").split(":");
+    var labels = {"vol:up":"Ses +","vol:down":"Ses −","vol:mute":"Sessiz","ch:up":"Kanal +","ch:down":"Kanal −","live":"Kanallar açılıyor","home":"Meral TV açılıyor"};
+    if (p[0] === "vol") send({cmd:"vol", dir:p[1]}, labels[p.join(":")]);
+    else if (p[0] === "ch") send({cmd:"ch", dir:p[1]}, labels[p.join(":")]);
+    else send({cmd:p[0]}, labels[p[0]]);
+  };
+});
+Array.prototype.forEach.call(document.querySelectorAll("[data-app]"), function(b){
+  b.onclick = function(){ var n = b.getAttribute("data-app"); send({cmd:"app", name:n}, n + " açılıyor"); };
+});
+
+/* ---------- Başlat ---------- */
+drawTabs(); drawGrid(); listen(); sync();
+setInterval(function(){ setStatus(); if (!document.hidden) sync(); }, 20000);
+document.addEventListener("visibilitychange", function(){ if (!document.hidden) sync(); });
+setInterval(setStatus, 3000);
+</script>
+</body>
+</html>
