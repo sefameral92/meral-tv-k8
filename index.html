@@ -178,6 +178,7 @@
       <button class="app press" data-page="ezan"><span class="ico" style="background:linear-gradient(135deg,#0b6b3a,#22b36b)"><svg viewBox="0 0 64 64"><path d="M33 7.5A3.8 3.8 0 1 0 33 15.1A4.6 4.6 0 0 1 33 7.5Z" fill="#ffd25a"/><path d="M32 17v7" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><path d="M17 39a15 15 0 0 1 30 0z" fill="#fff"/><rect x="14" y="38" width="36" height="16" fill="#fff"/><path d="M28 54v-7a4 4 0 0 1 8 0v7z" fill="#14864f"/><path d="M5 54V23l3-9 3 9v31z" fill="#fff"/><path d="M53 54V23l3-9 3 9v31z" fill="#fff"/><rect x="2" y="54" width="60" height="3.2" rx="1.6" fill="#fff"/></svg></span>Ezan Vakitleri</button>
       <button class="app press" data-page="kur"><span class="ico" style="background:linear-gradient(135deg,#c2410c,#f59e0b)"><svg viewBox="0 0 64 64"><rect x="10" y="38" width="10" height="16" rx="2" fill="#fff"/><rect x="27" y="28" width="10" height="26" rx="2" fill="#fff"/><rect x="44" y="20" width="10" height="34" rx="2" fill="#fff"/><path d="M8 30L24 18l10 6L52 9" fill="none" stroke="#ffe8a3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Kurlar</button>
       <button class="app press" data-page="wx"><span class="ico" style="background:linear-gradient(135deg,#0369a1,#7dd3fc)"><svg viewBox="0 0 64 64"><circle cx="24" cy="24" r="10" fill="#ffe08a"/><g stroke="#ffe08a" stroke-width="3.5" stroke-linecap="round"><path d="M24 6v4M8 24h4M12 12l3 3M36 12l-3 3"/></g><path d="M22 52h26a10 10 0 0 0 0-20 13 13 0 0 0-25-2A10 10 0 0 0 22 52z" fill="#fff"/></svg></span>Hava Durumu</button>
+      <button class="app press" data-page="cal"><span class="ico" style="background:linear-gradient(135deg,#1e293b,#64748b)"><svg viewBox="0 0 64 64"><rect x="9" y="13" width="46" height="42" rx="7" fill="#fff"/><path d="M9 20a7 7 0 0 1 7-7h32a7 7 0 0 1 7 7v6H9z" fill="#ef4444"/><rect x="19" y="7" width="5" height="12" rx="2.5" fill="#fff"/><rect x="40" y="7" width="5" height="12" rx="2.5" fill="#fff"/><g fill="#475569"><rect x="16" y="32" width="7" height="6" rx="1.5"/><rect x="28.5" y="32" width="7" height="6" rx="1.5"/><rect x="41" y="32" width="7" height="6" rx="1.5"/><rect x="16" y="43" width="7" height="6" rx="1.5"/><rect x="41" y="43" width="7" height="6" rx="1.5"/></g><rect x="28.5" y="43" width="7" height="6" rx="1.5" fill="#ef4444"/></svg></span>Takvim</button>
     </div>
   </section>
 
@@ -201,38 +202,139 @@
     <div class="grid" id="grid"></div>
   </section>
 
-  <p class="note">Telefon komutları güvenli bir mesaj servisi (ntfy.sh) üzerinden Meral TV'ye gider; TV'de Meral TV'nin arka planda çalışıyor olması gerekir. YouTube gibi uygulamaların içinde ok tuşlarıyla gezinmek için TV kumandasını kullan.</p>
+  <p class="note">Telefon komutları internet üzerinden (üç ayrı MQTT sunucusu) Meral TV'ye anında gider; TV açık ve Meral TV çalışıyor olmalı. Üstteki yeşil nokta TV'nin bağlı olduğunu gösterir. YouTube gibi uygulamaların içinde ok tuşlarıyla gezinmek için TV kumandasını kullan.</p>
   <div class="family"><b>MERAL AİLESİ</b><span>SULTAN · SEFA · ASYA · MUSTAFA</span></div>
 </main>
 <div id="toast"></div>
 
 <script>
-/* ---------- Bağlantı (ntfy.sh): telefon → TV ve TV → telefon ---------- */
-var TO_TV  = "https://ntfy.sh/meraltv-donezqcxuy1bdxzeeqnq";
-var FROM_TV = "https://ntfy.sh/meraltv-ovss10fbq7nqtxa64fj5";
-var lastState = 0, waitingSince = 0;
+/* ---------- Bağlantı: MQTT (ücretsiz, kotasız açık sunucular) ----------
+   ntfy.sh'nin günlük mesaj kotası dolunca TV'ye bağlanılamıyordu. Artık üç MQTT sunucusuna birden
+   bağlanılıyor; komut hepsine gider, TV her komutu bir kez uygular. TV açık mı, sunucuların tuttuğu
+   "online" bilgisinden anında görünür. */
+var RELAY = "meraltv/donezqcxuy1bdxzeeqnq";
+var BROKERS = ["wss://broker.emqx.io:8084/mqtt", "wss://broker.hivemq.com:8884/mqtt", "wss://test.mosquitto.org:8081/mqtt"];
+var relays = [], tvOnline = {}, lastStateTs = 0, lastYt = "";
 
 function $(id){ return document.getElementById(id); }
 function toast(t){ var e = $("toast"); e.textContent = t; e.className = "show"; clearTimeout(toast.h); toast.h = setTimeout(function(){ e.className = ""; }, 2200); }
+/* ---- Küçük MQTT 3.1.1 istemcisi (WebSocket üzerinden, QoS 0) ----
+   Ücretsiz, kotasız açık MQTT sunucularıyla telefon ↔ TV arasında anlık mesajlaşma için.
+   Kopan bağlantı kendiliğinden yeniden kurulur; 30 sn'de bir "ping" atılır. */
+function MiniMqtt(url, clientId, opts){
+  this.url = url; this.clientId = clientId; this.opts = opts || {};
+  this.subs = []; this.onmessage = null; this.onstate = null;
+  this.connected = false; this.ws = null; this.buf = []; this.pid = 1; this.retry = 0;
+  this.pingT = null; this.retryT = null; this.lastRx = 0;
+  this.connect();
+}
+MiniMqtt.prototype.u8 = function(str){ var s = unescape(encodeURIComponent(String(str))), a = []; for (var i = 0; i < s.length; i++) a.push(s.charCodeAt(i)); return a; };
+MiniMqtt.prototype.str = function(b){ var s = ""; for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); try { return decodeURIComponent(escape(s)); } catch(e){ return s; } };
+MiniMqtt.prototype.lstr = function(str){ var b = this.u8(str); return [b.length >> 8, b.length & 255].concat(b); };
+MiniMqtt.prototype.packet = function(type, body){
+  var len = body.length, h = [type];
+  do { var d = len % 128; len = Math.floor(len / 128); if (len > 0) d |= 128; h.push(d); } while (len > 0);
+  return new Uint8Array(h.concat(body));
+};
+MiniMqtt.prototype.raw = function(p){ try { if (this.ws && this.ws.readyState === 1){ this.ws.send(p.buffer); return true; } } catch(e){} return false; };
+MiniMqtt.prototype.connect = function(){
+  var self = this, ws;
+  clearTimeout(this.retryT);
+  try { ws = new WebSocket(this.url, ["mqtt"]); } catch(e){ return this.later(); }
+  this.ws = ws; this.buf = []; ws.binaryType = "arraybuffer";
+  var dead = false;
+  function down(){
+    if (dead) return; dead = true;
+    if (self.ws !== ws) return;
+    var was = self.connected; self.connected = false; clearInterval(self.pingT);
+    if (was && self.onstate) self.onstate(false);
+    self.later();
+  }
+  ws.onopen = function(){
+    var o = self.opts, flags = 0x02, pay = self.lstr(self.clientId), ka = o.keepalive || 30;
+    if (o.will){ flags |= 0x04 | (o.will.retain ? 0x20 : 0); pay = pay.concat(self.lstr(o.will.topic), self.lstr(o.will.payload)); }
+    self.raw(self.packet(0x10, [0, 4, 77, 81, 84, 84, 4, flags, ka >> 8, ka & 255].concat(pay)));
+  };
+  ws.onmessage = function(ev){ if (self.ws === ws){ self.lastRx = Date.now(); self.feed(new Uint8Array(ev.data)); } };
+  ws.onclose = down; ws.onerror = function(){ try { ws.close(); } catch(e){} down(); };
+  setTimeout(function(){ if (self.ws === ws && !self.connected){ try { ws.close(); } catch(e){} down(); } }, 15000);   // 15 sn'de bağlanamadıysa yeniden dene
+};
+MiniMqtt.prototype.later = function(){
+  var self = this, wait = Math.min(30000, 1000 * Math.pow(2, this.retry++)) + Math.floor(Math.random() * 1000);
+  clearTimeout(this.retryT); this.retryT = setTimeout(function(){ self.connect(); }, wait);
+};
+MiniMqtt.prototype.kick = function(){ if (!this.connected){ this.retry = 0; this.connect(); } };   // hemen yeniden dene (ör. sayfa öne gelince)
+MiniMqtt.prototype.feed = function(d){
+  for (var i = 0; i < d.length; i++) this.buf.push(d[i]);
+  while (this.buf.length >= 2){
+    var mul = 1, len = 0, p = 1, b;
+    do { if (p >= this.buf.length) return; b = this.buf[p++]; len += (b & 127) * mul; mul *= 128; } while (b & 128);
+    if (this.buf.length < p + len) return;
+    var type = this.buf[0], body = this.buf.slice(p, p + len);
+    this.buf = this.buf.slice(p + len);
+    this.handle(type, body);
+  }
+};
+MiniMqtt.prototype.handle = function(type, body){
+  var t = type >> 4, self = this;
+  if (t === 2){                                    // CONNACK
+    if (body[1] !== 0){ try { this.ws.close(); } catch(e){} return; }
+    this.connected = true; this.retry = 0; this.lastRx = Date.now();
+    for (var i = 0; i < this.subs.length; i++) this.sendSub(this.subs[i]);
+    clearInterval(this.pingT);
+    var ka = (this.opts.keepalive || 30) * 1000;
+    this.pingT = setInterval(function(){
+      if (Date.now() - self.lastRx > ka * 2){ try { self.ws.close(); } catch(e){} return; }   // sunucu sustu: bağlantıyı yenile
+      self.raw(self.packet(0xC0, []));
+    }, ka * 0.6);
+    if (this.onstate) this.onstate(true);
+  } else if (t === 3){                             // PUBLISH
+    var tl = (body[0] << 8) | body[1], off = 2 + tl;
+    if ((type >> 1) & 3) off += 2;
+    if (this.onmessage) this.onmessage(this.str(body.slice(2, 2 + tl)), this.str(body.slice(off)), !!(type & 1));
+  }
+};
+MiniMqtt.prototype.sendSub = function(topic){
+  var id = this.pid++ & 0xffff || 1;
+  this.raw(this.packet(0x82, [id >> 8, id & 255].concat(this.lstr(topic), [0])));
+};
+MiniMqtt.prototype.subscribe = function(topic){ this.subs.push(topic); if (this.connected) this.sendSub(topic); };
+MiniMqtt.prototype.publish = function(topic, msg, retain){
+  if (!this.connected) return false;
+  return this.raw(this.packet(0x30 | (retain ? 1 : 0), this.lstr(topic).concat(this.u8(msg))));
+};
+function anyConnected(){ for (var i = 0; i < relays.length; i++) if (relays[i].connected) return true; return false; }
+function tvIsOnline(){ for (var k in tvOnline) if (tvOnline[k]) return true; return false; }
 function send(obj, label){
   if (label){ toast(label); if (navigator.vibrate) try { navigator.vibrate(12); } catch(e){} }   // yalnızca dokunuşlarda titret
-  if (!waitingSince) waitingSince = Date.now();
-  return fetch(TO_TV, {method: "POST", body: JSON.stringify(obj)}).catch(function(){ toast("İnternet bağlantısı yok"); });
+  obj.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  var s = JSON.stringify(obj), ok = 0;
+  relays.forEach(function(c){ if (c.publish(RELAY + "/cmd", s, false)) ok++; });
+  if (!ok){ if (label) toast("Bağlantı kuruluyor, birazdan tekrar deneyin"); relays.forEach(function(c){ c.kick(); }); }
+  else if (label && !tvIsOnline()) setTimeout(function(){ if (!tvIsOnline()) toast("TV kapalı ya da Meral TV açık değil"); }, 2300);
+  return ok > 0;
 }
 function setStatus(){
-  var ok = Date.now() - lastState < 45000;
-  var late = waitingSince && Date.now() - waitingSince > 8000 && !ok;
-  $("dot").className = "dot" + (ok ? " ok" : late ? " bad" : "");
-  $("statusText").textContent = ok ? "TV bağlı" : late ? "TV yanıt vermiyor" : "TV'ye bağlanıyor…";
+  var conn = anyConnected(), on = conn && tvIsOnline();
+  $("dot").className = "dot" + (on ? " ok" : conn ? " bad" : "");
+  $("statusText").textContent = on ? "TV bağlı" : conn ? "TV kapalı veya Meral TV açık değil" : "Bağlanıyor…";
 }
 function listen(){
-  var es = new EventSource(FROM_TV + "/sse");
-  es.onmessage = function(e){
-    try { var m = JSON.parse(e.data); var s = JSON.parse(m.message); if (s.t === "state") onState(s); else if (s.t === "yt") onYt(s); } catch(err){}
-  };
-  es.onerror = function(){ setStatus(); };
+  var me = "meraltv-tel-" + Math.random().toString(36).slice(2, 10);
+  BROKERS.forEach(function(url, i){
+    var c = new MiniMqtt(url, me + "-" + i, {keepalive: 30});
+    [RELAY + "/state", RELAY + "/yt", RELAY + "/online"].forEach(function(t){ c.subscribe(t); });
+    c.onstate = function(up){ if (!up) delete tvOnline[i]; setStatus(); };
+    c.onmessage = function(topic, msg){
+      if (topic === RELAY + "/online"){ tvOnline[i] = msg === "1"; setStatus(); return; }
+      var s; try { s = JSON.parse(msg); } catch(e){ return; }
+      if (s.t === "state"){ if (s.ts && s.ts <= lastStateTs) return; lastStateTs = s.ts || 0; onState(s); }
+      else if (s.t === "yt"){ if (msg === lastYt) return; lastYt = msg; onYt(s); }   // aynı sonuç diğer sunuculardan da gelir
+    };
+    relays.push(c);
+  });
 }
-function sync(){ send({cmd: "sync"}); }
+function sync(){ if (anyConnected()) send({cmd: "sync"}); }
 
 /* ---------- Kanallar: TV'deki Meral TV ile aynı sıralama ve numaralar ---------- */
 var LOGO_ALIAS = {yildizen:"yildiztven", trt3spor:"trtsporyildiz", tgrthabersd:"tgrthaber", dmaxsd:"dmax", tlcsd:"tlc", semerkandway:"semerkand", szc:"sozcutv", tv2:"teve2"};
@@ -307,7 +409,7 @@ $("filter").addEventListener("input", drawGrid);
 
 /* ---------- TV'den gelen durum ---------- */
 function onState(s){
-  lastState = Date.now(); waitingSince = 0; setStatus();
+  setStatus();
   if (s.top && s.top.length){
     var box = $("top"); box.innerHTML = "";
     s.top.forEach(function(x){ var c = FIRST[x.k] || {k: x.k, name: x.n, d: x.d}; box.appendChild(channelTile(c, x.p)); });
@@ -316,7 +418,6 @@ function onState(s){
 
 /* ---------- YouTube sonuçları (TV arar, listeyi buraya da gönderir) ---------- */
 function onYt(s){
-  lastState = Date.now(); setStatus();
   var box = $("ytList"); box.innerHTML = "";
   $("ytHead").textContent = "YouTube: " + s.q;
   (s.items || []).forEach(function(it){
@@ -441,6 +542,7 @@ function runCommand(raw){
   if (/youtube|yutup/.test(t)) return send({cmd:"app", name:"YouTube"}, "YouTube açılıyor");
   if (/iptv|smarters/.test(t)) return send({cmd:"app", name:"IPTV Smarters"}, "IPTV açılıyor");
   if (/internet|tarayıcı|google/.test(t)) return send({cmd:"app", name:"İnternet"}, "İnternet açılıyor");
+  if (/takvim|bugün ayın kaçı|hangi gündeyiz/.test(t)) return send({cmd:"page", p:"cal"}, "Takvim açılıyor");
   if (/\bhava\b|hava durumu|sıcaklık|kaç derece/.test(t)) return send({cmd:"page", p:"wx"}, "Hava durumu açılıyor");
   if (/ezan|namaz|vakitler|imsak|iftar|sahur/.test(t)) return send({cmd:"page", p:"ezan"}, "Ezan vakitleri açılıyor");
   if (/\bkurlar?\b|döviz|dolar|euro|avro|altın|çeyrek|bilezik|gümüş/.test(t)) return send({cmd:"page", p:"kur"}, "Kurlar açılıyor");
@@ -504,16 +606,17 @@ Array.prototype.forEach.call(document.querySelectorAll("[data-cmd]"), function(b
   };
 });
 Array.prototype.forEach.call(document.querySelectorAll("[data-page]"), function(b){
-  b.onclick = function(){ var p = b.getAttribute("data-page"); send({cmd:"page", p:p}, {kur: "Kurlar açılıyor", wx: "Hava durumu açılıyor"}[p] || "Ezan vakitleri açılıyor"); };
+  b.onclick = function(){ var p = b.getAttribute("data-page"); send({cmd:"page", p:p}, {kur: "Kurlar açılıyor", wx: "Hava durumu açılıyor", cal: "Takvim açılıyor"}[p] || "Ezan vakitleri açılıyor"); };
 });
 Array.prototype.forEach.call(document.querySelectorAll("[data-app]"), function(b){
   b.onclick = function(){ var n = b.getAttribute("data-app"); send({cmd:"app", name:n}, n + " açılıyor"); };
 });
 
 /* ---------- Başlat ---------- */
-drawTabs(); drawGrid(); listen(); sync();
-setInterval(function(){ setStatus(); if (!document.hidden) sync(); }, 20000);
-document.addEventListener("visibilitychange", function(){ if (!document.hidden) sync(); });
+drawTabs(); drawGrid(); listen(); setStatus();
+// Sayfa öne gelince (iPhone arka planda bağlantıyı keser) hemen yeniden bağlan ve güncel durumu iste
+document.addEventListener("visibilitychange", function(){ if (!document.hidden){ relays.forEach(function(c){ c.kick(); }); setTimeout(sync, 1500); } });
+window.addEventListener("pageshow", function(){ relays.forEach(function(c){ c.kick(); }); });
 setInterval(setStatus, 3000);
 </script>
 </body>
